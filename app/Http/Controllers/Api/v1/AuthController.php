@@ -21,10 +21,7 @@ class AuthController extends Controller
         $user->password = \Hash::make($request->get('password'));
         $user->save();
 
-        return response([
-            'status' => 'success',
-            'data' => $user
-        ], 200);
+        return $this->respondWithItem($user, new UserTransformer, ['authorization' => $token]);
     }
 
     public function login(Request $request)
@@ -32,19 +29,15 @@ class AuthController extends Controller
         $credentials = $request->only('username', 'password');
 
         if ( ! $token = JWTAuth::attempt($credentials)) {
-            return response([
-                'status' => 'error',
-                'error' => 'invalid.credentials',
-                'msg' => 'Invalid Credentials.'
-            ], 400);
+            return $this->errorWrongArgs('Invalid Credentials.');
         }
 
-        return response([
-            'status' => 'success'
-        ])
-        ->header('Authorization', $token);
+        $user = Auth::user();
+
+        return $this->respondWithItem($user, new UserTransformer, ['authorization' => $token]);
     }
 
+    /*
     public function loginOther(Request $request)
     {
         $user = User::find($request->get('id'));
@@ -62,36 +55,31 @@ class AuthController extends Controller
         ])
         ->header('Authorization', $token);
     }
+     */
 
     public function user(Request $request)
     {
         $user = User::find(Auth::user()->id);
 
-        return response([
-            'status' => 'success',
-            'data' => $user
-        ]);
+        return $this->respondWithItem($user, new UserTransformer, ['authorization' => $token]);
     }
 
     public function logout()
     {
-        // JWTAuth::invalidate();
+        JWTAuth::invalidate();
 
-        return response([
-            'status' => 'success',
-            'msg' => 'Logged out Successfully.'
-        ], 200);
+        return $this->respondWithMessage('logged out');
     }
 
     public function facebook(Request $request)
     {
         return $this->_social($request, 'facebook', function ($user) {
             return (object) [
-                // 'id' => $user->id,
-                // 'email' => $user->user['email'],
-                // 'first_name' => $user->user['first_name'],
-                // 'last_name' => $user->user['last_name'],
-                // 'photo_url' => $user->avatar . '&width=1200'
+                'id' => $user->id,
+                'email' => $user->user['email'],
+                'first_name' => $user->user['first_name'],
+                'last_name' => $user->user['last_name'],
+                'avatar' => $user->avatar . '&width=1200'
             ];
         });
     }
@@ -100,11 +88,11 @@ class AuthController extends Controller
     {
         return $this->_social($request, 'google', function ($user) {
             return (object) [
-                // 'id' => $user->id,
-                // 'email' => $user['emails'][0]['value'],
-                // 'first_name' => $user['name']['givenName'],
-                // 'last_name' => $user['name']['familyName'],
-                // 'photo_url' => array_get($user, 'image')['url'] . '&width=1200'
+                'id' => $user->id,
+                'email' => $user['emails'][0]['value'],
+                'first_name' => $user['name']['givenName'],
+                'last_name' => $user['name']['familyName'],
+                'avatar' => array_get($user, 'image')['url'] . '&width=1200'
             ];
         });
     }
@@ -113,76 +101,66 @@ class AuthController extends Controller
     {
         return $this->_social($request, 'buffer', function ($user) {
             return (object) [
-                // 'id' => $user->id,
-                // 'first_name' => $user->name,
-                // 'last_name' => null,
-                // 'email' => $user->email ?: null,
-                // 'photo_url' => $user->avatar,
+                'id' => $user->id,
+                'first_name' => $user->name,
+                'last_name' => null,
+                'email' => $user->email ?: null,
+                'photo_url' => $user->avatar,
             ];
         });
     }
 
-    private function _social(Request $request, $type, $cb)
+    /*
+     * Generic social login
+     * Redirect and callback both happen here
+     */
+    private function _social(Request $request, $provider, $cb)
     {
         if ($request->has('code')) {
-            // $new_user = false;
+            //redirect has already happened. use code to find or create user
 
-            // $social_user = Socialite::with($type)->stateless()->user();
-            // $social_user = $cb($social_user);
+            $social_user = Socialite::with($provider)->stateless()->user();
+            $social_user = $cb($social_user);
 
-            // if ( ! @$social_user->id) {
-            //     return response([
-            //         'status' => 'error',
-            //         'code' => 'ErrorGettingSocialUser',
-            //         'msg' => 'There was an error getting the ' . $type . ' user.'
-            //     ], 400);
-            // }
+            if (!isset($social_user->id)) {
+                return $this->errorInternalError('There was an error getting the ' + $provier + ' user.');
+            }
 
-            // $user = User::where($type . '_id', $social_user->id)->first();
+            $user = $this->findOrCreateUser($social_user);
 
-            // if ( ! ($user instanceof User)) {
-            //     $user = User::where('email', $social_user->email)->first();
+            $user = User::where($provider . '_id', $social_user->id)->first();
 
-            //     if ( ! ($user instanceof User)) {
-            //         $new_user = true;
-            //         $user = new User();
-            //     }
+            if ( ! ($user instanceof User)) {
+                $user = User::where('email', $social_user->email)->first();
 
-            //     $user->{$type . '_id'} = $social_user->id;
-            // }
+                if ( ! ($user instanceof User)) {
+                    $user = new User();
+                }
 
-            // // Update info and save.
+                $user->{$provider . '_id'} = $social_user->id;
+            }
 
-            // if (empty($user->email)) { $user->email = $social_user->email; }
-            // if (empty($user->first_name)) { $user->first_name = $social_user->first_name; }
-            // if (empty($user->last_name)) { $user->last_name = $social_user->last_name; }
+            // Update info and save.
 
-            $user = User::where('username', 'social')->first();
-            
+            if (empty($user->email)) { $user->email = $social_user->email; }
+            if (empty($user->name)) { $user->name = $social_user->name; }
+            if (empty($user->name)) { $user->avatar = $social_user->avatar; }
+
             if ( ! $token = JWTAuth::fromUser($user)) {
                 throw new AuthorizationException;
             }
 
-            return response([
-                'status' => 'success',
-                'msg' => 'Successfully logged in via ' . $type . '.'
-            ])
-            ->header('Authorization', $token);
+            return $this->respondWithItem($user, new UserTransformer, ['authorization' => $token]);
         }
 
-        return response([
-            'status' => 'success',
-            'msg' => 'Successfully fetched token url.',
-            'data' => [
-                'url' => Socialite::with($type)->stateless()->redirect()->getTargetUrl()
-            ]
-        ], 200);
+        // redirect if no code it included
+        return [
+            'token_url' => Socialite::with($provider)->stateless()->redirect()->getTargetUrl()
+        ];
     }
 
     public function refresh()
     {
-        return response([
-            'status' => 'success'
-        ]);
+        return $this->respondWithMessage('refreshed token');
     }
 }

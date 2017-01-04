@@ -7,7 +7,7 @@ Route::group([
 ], function ($app) {
     $app->post('/auth/login', 'AuthController@login');
     $app->post('/auth/register', 'AuthController@register');
-    
+
     $app->post('/auth/facebook', 'AuthController@facebook');
     $app->post('/auth/google', 'AuthController@google');
     $app->post('/auth/twitter', 'AuthController@twitter');
@@ -28,9 +28,9 @@ Route::group([
     'middleware' => ['jwt.auth', 'cors']
 ], function ($app) {
     $app->post('/auth/logout', 'AuthController@logout');
-    $app->post('/auth/login-other', 'AuthController@loginOther');
+    //$app->post('/auth/login-other', 'AuthController@loginOther');
     $app->get('/auth/user', 'AuthController@user');
-    
+
 
     $app->get('/users', 'UserController@all');
 });
