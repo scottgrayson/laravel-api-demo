@@ -1,5 +1,9 @@
-# Websanova Laravel Demo API
+# Laravel Api 
+- cors
+- jwt
+- socialite
+- fractal transformers
 
-Demo server for Websanova apps and plugins.
+# For use with SPA
 
-* [vue-auth](https://github.com/websanova/vue-auth)
+https://github.com/scottgrayson/nuxt-spa-client
